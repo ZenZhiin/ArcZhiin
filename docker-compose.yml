@@ -1,0 +1,71 @@
+# =============================================================================
+# ArcZhiin — Docker Compose
+# Orchestrates all services for production deployment on the desktop hub.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # ArcZhiin Backend (FastAPI)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: arczhiin-backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    depends_on:
+      - ollama
+    networks:
+      - arczhiin-net
+
+  # ---------------------------------------------------------------------------
+  # Ollama (Local LLM with CUDA GPU)
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: arczhiin-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - arczhiin-net
+
+  # ---------------------------------------------------------------------------
+  # Home Assistant
+  # ---------------------------------------------------------------------------
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: arczhiin-homeassistant
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    volumes:
+      - ha-config:/config
+    environment:
+      - TZ=Asia/Kuala_Lumpur
+    networks:
+      - arczhiin-net
+
+volumes:
+  ollama-models:
+  ha-config:
+
+networks:
+  arczhiin-net:
+    driver: bridge

@@ -46,16 +46,16 @@ class LLMConfig:
 
     # Tiered model routing
     model_fast: str = field(
-        default_factory=lambda: _get_env("LLM_MODEL_FAST", "ollama/llama3.2:3b")
+        default_factory=lambda: _get_env("LLM_MODEL_FAST", "gemini-3.1-flash-lite")
     )
     model_default: str = field(
-        default_factory=lambda: _get_env("LLM_MODEL_DEFAULT", "ollama/llama3.1:8b")
+        default_factory=lambda: _get_env("LLM_MODEL_DEFAULT", "gemini-3-flash-preview")
     )
     model_complex: str = field(
-        default_factory=lambda: _get_env("LLM_MODEL_COMPLEX", "gemini/gemini-2.5-flash")
+        default_factory=lambda: _get_env("LLM_MODEL_COMPLEX", "gemini-3-flash-preview")
     )
     model_pro: str = field(
-        default_factory=lambda: _get_env("LLM_MODEL_PRO", "gemini/gemini-2.5-pro")
+        default_factory=lambda: _get_env("LLM_MODEL_PRO", "gemini-3.1-pro-preview")
     )
 
 

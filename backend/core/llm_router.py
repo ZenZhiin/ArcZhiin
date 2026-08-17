@@ -1,6 +1,6 @@
 # =============================================================================
 # ArcZhiin — LLM Router
-# Unified interface for multiple LLM providers via LiteLLM.
+# Unified interface for Gemini (google-genai) and Ollama (HTTP).
 # Routes queries to the appropriate model tier based on complexity.
 # =============================================================================
 
@@ -11,14 +11,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import AsyncGenerator
 
-import litellm
+import httpx
+from google import genai
 
 from config import settings
 
 logger = logging.getLogger(__name__)
-
-# Suppress LiteLLM's verbose logging
-litellm.suppress_debug_info = True
 
 
 class ModelTier(str, Enum):
@@ -29,14 +27,6 @@ class ModelTier(str, Enum):
     COMPLEX = "complex"     # Multi-step reasoning
     PRO = "pro"             # Deep analysis, planning
 
-
-# Map tiers to configured model names
-_TIER_MODEL_MAP: dict[ModelTier, str] = {
-    ModelTier.FAST: settings.llm.model_fast,
-    ModelTier.DEFAULT: settings.llm.model_default,
-    ModelTier.COMPLEX: settings.llm.model_complex,
-    ModelTier.PRO: settings.llm.model_pro,
-}
 
 # ArcZhiin's system personality
 SYSTEM_PROMPT = """You are ArcZhiin, an intelligent AI assistant created by ZenZhiin.
@@ -70,25 +60,113 @@ class LLMResponse:
 
 def _get_model_for_tier(tier: ModelTier) -> str:
     """Resolve the model name for a given tier."""
-    return _TIER_MODEL_MAP.get(tier, settings.llm.model_default)
+    tier_map: dict[ModelTier, str] = {
+        ModelTier.FAST: settings.llm.model_fast,
+        ModelTier.DEFAULT: settings.llm.model_default,
+        ModelTier.COMPLEX: settings.llm.model_complex,
+        ModelTier.PRO: settings.llm.model_pro,
+    }
+    return tier_map.get(tier, settings.llm.model_default)
 
 
-def _build_api_params(model: str) -> dict:
-    """Build provider-specific API parameters."""
-    params: dict = {}
+def _is_ollama_model(model: str) -> bool:
+    """Check if a model is an Ollama (local) model."""
+    return model.startswith("ollama/")
 
-    if model.startswith("gemini/"):
-        if settings.llm.gemini_api_key:
-            params["api_key"] = settings.llm.gemini_api_key
 
-    elif model.startswith("ollama/"):
-        params["api_base"] = settings.llm.ollama_base_url
+def _get_gemini_client() -> genai.Client:
+    """Create a Gemini API client."""
+    return genai.Client(api_key=settings.llm.gemini_api_key)
 
-    elif model.startswith("gpt") or model.startswith("openai/"):
-        if settings.llm.openai_api_key:
-            params["api_key"] = settings.llm.openai_api_key
 
-    return params
+async def _call_gemini(
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+) -> LLMResponse:
+    """Call Gemini API via the official google-genai SDK."""
+    client = _get_gemini_client()
+
+    # Build the contents from messages
+    # Gemini expects a system instruction separately
+    system_parts: list[str] = []
+    contents: list[dict[str, str]] = []
+
+    for msg in messages:
+        if msg["role"] == "system":
+            system_parts.append(msg["content"])
+        else:
+            # Map 'assistant' role to 'model' for Gemini
+            role = "model" if msg["role"] == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+    # Ensure conversation starts with a user message
+    if not contents or contents[0]["role"] != "user":
+        contents.insert(0, {"role": "user", "parts": [{"text": "Hello"}]})
+
+    config = {
+        "temperature": temperature,
+        "max_output_tokens": max_tokens,
+    }
+    if system_parts:
+        config["system_instruction"] = "\n".join(system_parts)
+
+    response = client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=config,
+    )
+
+    input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+    output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+
+    return LLMResponse(
+        content=response.text or "",
+        model=model,
+        tier=ModelTier.DEFAULT,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
+async def _call_ollama(
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+) -> LLMResponse:
+    """Call Ollama API via HTTP."""
+    # Strip 'ollama/' prefix for the API call
+    model_name = model.replace("ollama/", "")
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            f"{settings.llm.ollama_base_url}/api/chat",
+            json={
+                "model": model_name,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                },
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    content = data.get("message", {}).get("content", "")
+    input_tokens = data.get("prompt_eval_count", 0)
+    output_tokens = data.get("eval_count", 0)
+
+    return LLMResponse(
+        content=content,
+        model=model,
+        tier=ModelTier.DEFAULT,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
 
 async def chat(
@@ -100,126 +178,46 @@ async def chat(
     """
     Send a chat completion request to the appropriate LLM tier.
 
-    Args:
-        messages: List of message dicts with 'role' and 'content' keys.
-        tier: The complexity tier to route to.
-        temperature: Sampling temperature (0.0 - 1.0).
-        max_tokens: Maximum tokens in the response.
-
-    Returns:
-        LLMResponse with the generated content and metadata.
+    Tries the requested tier first, then falls back through alternatives.
     """
     model = _get_model_for_tier(tier)
-    api_params = _build_api_params(model)
 
-    # Prepend system prompt if not already present
+    # Prepend system prompt if not present
     if not messages or messages[0].get("role") != "system":
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
 
-    try:
-        response = await litellm.acompletion(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **api_params,
-        )
+    # Build fallback chain: requested tier → other tiers
+    all_tiers = [tier] + [t for t in ModelTier if t != tier]
 
-        content = response.choices[0].message.content or ""
-        usage = response.usage
+    for attempt_tier in all_tiers:
+        attempt_model = _get_model_for_tier(attempt_tier)
+        try:
+            if _is_ollama_model(attempt_model):
+                response = await _call_ollama(attempt_model, messages, temperature, max_tokens)
+            else:
+                response = await _call_gemini(attempt_model, messages, temperature, max_tokens)
 
-        logger.info(
-            "LLM response: model=%s, tokens=%d/%d",
-            model,
-            usage.prompt_tokens if usage else 0,
-            usage.completion_tokens if usage else 0,
-        )
+            response.tier = attempt_tier
 
-        return LLMResponse(
-            content=content,
-            model=model,
-            tier=tier,
-            input_tokens=usage.prompt_tokens if usage else 0,
-            output_tokens=usage.completion_tokens if usage else 0,
-        )
+            logger.info(
+                "LLM response: model=%s, tier=%s, tokens=%d/%d",
+                response.model, attempt_tier.value,
+                response.input_tokens, response.output_tokens,
+            )
+            return response
 
-    except Exception as exc:
-        logger.error("LLM call failed (tier=%s, model=%s): %s", tier, model, exc)
+        except Exception as exc:
+            logger.warning(
+                "LLM call failed (tier=%s, model=%s): %s",
+                attempt_tier.value, attempt_model, str(exc)[:120],
+            )
+            continue
 
-        # Fallback: try the next tier down
-        fallback_chain = [ModelTier.COMPLEX, ModelTier.DEFAULT, ModelTier.FAST]
-        for fallback_tier in fallback_chain:
-            if fallback_tier == tier:
-                continue
-            try:
-                fallback_model = _get_model_for_tier(fallback_tier)
-                fallback_params = _build_api_params(fallback_model)
-
-                logger.info("Falling back to: %s (%s)", fallback_model, fallback_tier)
-
-                response = await litellm.acompletion(
-                    model=fallback_model,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    **fallback_params,
-                )
-
-                content = response.choices[0].message.content or ""
-                usage = response.usage
-
-                return LLMResponse(
-                    content=content,
-                    model=fallback_model,
-                    tier=fallback_tier,
-                    input_tokens=usage.prompt_tokens if usage else 0,
-                    output_tokens=usage.completion_tokens if usage else 0,
-                )
-            except Exception:
-                continue
-
-        # All tiers failed
-        return LLMResponse(
-            content="I'm sorry, I'm unable to process your request right now. All LLM providers are unavailable.",
-            model="none",
-            tier=tier,
-            input_tokens=0,
-            output_tokens=0,
-        )
-
-
-async def chat_stream(
-    messages: list[dict[str, str]],
-    tier: ModelTier = ModelTier.DEFAULT,
-    temperature: float = 0.7,
-    max_tokens: int = 1024,
-) -> AsyncGenerator[str, None]:
-    """
-    Stream a chat completion response token by token.
-
-    Yields individual content chunks as they arrive.
-    """
-    model = _get_model_for_tier(tier)
-    api_params = _build_api_params(model)
-
-    if not messages or messages[0].get("role") != "system":
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
-
-    try:
-        response = await litellm.acompletion(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-            **api_params,
-        )
-
-        async for chunk in response:
-            delta = chunk.choices[0].delta
-            if delta and delta.content:
-                yield delta.content
-
-    except Exception as exc:
-        logger.error("LLM stream failed: %s", exc)
-        yield f"Error: Unable to generate response — {exc}"
+    # All tiers failed
+    return LLMResponse(
+        content="I'm sorry, I'm unable to process your request right now. All LLM providers are unavailable.",
+        model="none",
+        tier=tier,
+        input_tokens=0,
+        output_tokens=0,
+    )

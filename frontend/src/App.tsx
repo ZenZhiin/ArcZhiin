@@ -1,12 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
+import { useVoice } from './hooks/useVoice';
 import { StatusBar } from './components/StatusBar';
 import { VoiceOrb } from './components/VoiceOrb';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 
 const App = () => {
-  const { messages, isConnected, isThinking, sessionId, sendMessage, clearContext } = useWebSocket();
+  const { messages, isConnected: chatConnected, isThinking, sessionId, sendMessage, clearContext } = useWebSocket();
+  const voice = useVoice();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -19,12 +21,19 @@ const App = () => {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[var(--color-arc-bg)] text-[var(--color-arc-text)] font-sans overflow-hidden">
-      <StatusBar isConnected={isConnected} sessionId={sessionId} messages={messages} />
+      <StatusBar isConnected={chatConnected} sessionId={sessionId} messages={messages} />
       
       <div className="flex flex-col md:flex-row flex-1 mt-14 overflow-hidden">
         {/* Left Panel: Voice Orb */}
         <div className="hidden md:flex md:w-[40%] h-full relative z-10 bg-[var(--color-arc-bg)]">
-          <VoiceOrb isConnected={isConnected} />
+          <VoiceOrb
+            isConnected={voice.isConnected}
+            status={voice.status}
+            lastTranscription={voice.lastTranscription}
+            lastResponse={voice.lastResponse}
+            onTapStart={voice.startRecording}
+            onTapStop={voice.stopRecording}
+          />
         </div>
         
         {/* Right Panel: Chat Interface */}

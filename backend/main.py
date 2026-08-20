@@ -14,6 +14,7 @@ from config import settings
 from db.database import db
 from api.routes.chat import router as chat_router
 from api.routes.health import router as health_router
+from api.routes.voice import router as voice_router
 
 # Configure logging
 logging.basicConfig(
@@ -67,3 +68,4 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 app.include_router(health_router, prefix="/api", tags=["health"])
 app.include_router(chat_router, prefix="/ws", tags=["chat"])
+app.include_router(voice_router, prefix="/ws", tags=["voice"])

@@ -14,6 +14,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from core.agent import process_message
 from core.context import context_manager
 from voice.stt import transcribe_audio
+from voice.tts import synthesize_audio
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ async def websocket_voice(websocket: WebSocket) -> None:
     1. Client connects → server sends welcome
     2. Client sends binary audio data (WAV or raw PCM)
     3. Server transcribes → processes through AI brain → sends text response
-    4. Client uses browser speechSynthesis for TTS
+    4. Server synthesizes TTS audio locally → sends base64 audio to client
 
     Client → Server:
         Binary: audio bytes (WAV format from MediaRecorder)
@@ -39,6 +40,7 @@ async def websocket_voice(websocket: WebSocket) -> None:
         { "type": "transcription", "content": "what user said" }
         { "type": "status", "content": "thinking" }
         { "type": "response", "content": "AI response", "model": "...", "tier": "..." }
+        { "type": "audio", "data": "base64_wav_string" }
         { "type": "error", "content": "error message" }
     """
     await websocket.accept()
@@ -109,6 +111,7 @@ async def websocket_voice(websocket: WebSocket) -> None:
 
                     response = await process_message(context, transcription)
 
+                    # Send text response
                     await websocket.send_json({
                         "type": "response",
                         "content": response.content,
@@ -120,8 +123,23 @@ async def websocket_voice(websocket: WebSocket) -> None:
                         },
                     })
 
+                    # Step 3: Synthesize local TTS and send
+                    await websocket.send_json({
+                        "type": "status",
+                        "content": "speaking",
+                    })
+
+                    import base64
+                    tts_bytes = synthesize_audio(response.content)
+                    tts_b64 = base64.b64encode(tts_bytes).decode("ascii")
+
+                    await websocket.send_json({
+                        "type": "audio",
+                        "data": tts_b64,
+                    })
+
                 except Exception as exc:
-                    logger.error("AI processing failed: %s", exc)
+                    logger.error("AI/TTS processing failed: %s", exc)
                     await websocket.send_json({
                         "type": "error",
                         "content": f"Processing failed: {exc}",

@@ -44,12 +44,17 @@ export const useVoice = () => {
           case 'status':
             if (data.content === 'transcribing') setStatus('transcribing');
             else if (data.content === 'thinking') setStatus('thinking');
+            else if (data.content === 'speaking') setStatus('speaking');
             break;
 
           case 'response':
             setLastResponse(data.content);
+            // We don't set 'speaking' here anymore, we wait for the 'audio' message
+            break;
+
+          case 'audio':
             setStatus('speaking');
-            speak(data.content);
+            playAudio(data.data);
             break;
 
           case 'error':
@@ -144,33 +149,37 @@ export const useVoice = () => {
     }
   }, []);
 
-  const speak = useCallback((text: string) => {
-    if ('speechSynthesis' in window) {
-      // Cancel any ongoing speech
-      window.speechSynthesis.cancel();
+  const playAudio = useCallback((base64Data: string) => {
+    try {
+      const binaryString = atob(base64Data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const blob = new Blob([bytes], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      
+      audio.onended = () => {
+        setStatus('idle');
+        URL.revokeObjectURL(url);
+      };
+      
+      audio.onerror = () => {
+        console.error('Audio playback error');
+        setStatus('idle');
+        URL.revokeObjectURL(url);
+      };
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-
-      // Try to use a natural-sounding voice
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v =>
-        v.name.includes('Samantha') || // macOS
-        v.name.includes('Google') ||
-        v.name.includes('Natural') ||
-        v.lang.startsWith('en')
-      );
-      if (preferred) utterance.voice = preferred;
-
-      utterance.onend = () => setStatus('idle');
-      utterance.onerror = () => setStatus('idle');
-
-      window.speechSynthesis.speak(utterance);
-    } else {
-      // No TTS support — just go back to idle
-      setTimeout(() => setStatus('idle'), 1000);
+      audio.play().catch(err => {
+        console.error('Audio play blocked or failed:', err);
+        setStatus('idle');
+      });
+    } catch (err) {
+      console.error('Failed to decode audio:', err);
+      setStatus('idle');
     }
   }, []);
 

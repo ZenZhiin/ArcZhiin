@@ -70,7 +70,10 @@ class VoiceConfig:
         default_factory=lambda: _get_env("WAKE_WORD_MODEL", "hey_jarvis")
     )
     stt_model_size: str = field(
-        default_factory=lambda: _get_env("STT_MODEL_SIZE", "base.en")
+        default_factory=lambda: _get_env("STT_MODEL_SIZE", "large-v3")
+    )
+    stt_device: str = field(
+        default_factory=lambda: _get_env("STT_DEVICE", "auto")
     )
     tts_voice: str = field(
         default_factory=lambda: _get_env("TTS_VOICE", "en_US-lessac-medium")

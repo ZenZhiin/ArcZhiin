@@ -1,15 +1,14 @@
 # =============================================================================
 # ArcZhiin — Speech-to-Text Engine
-# Uses faster-whisper for local, fast, and accurate transcription.
+# Uses faster-whisper (large-v3) for local, accurate transcription.
+# Auto-detects GPU (CUDA) on desktop, falls back to CPU on Mac.
 # =============================================================================
 
 from __future__ import annotations
 
-import io
 import logging
 import tempfile
 import wave
-from pathlib import Path
 
 from faster_whisper import WhisperModel
 
@@ -20,21 +19,60 @@ logger = logging.getLogger(__name__)
 # Lazy-loaded singleton
 _model: WhisperModel | None = None
 
+# Smart home vocabulary hints — biases Whisper toward these words
+VOCAB_HINTS = (
+    "ArcZhiin, ZenZhiin, turn on, turn off, "
+    "living room, bedroom, kitchen, bathroom, dining room, "
+    "air conditioner, air cond, AC, fan, ceiling fan, "
+    "lights, lamp, brightness, dim, bright, "
+    "temperature, humidity, sensor, "
+    "lock, unlock, door, window, curtain, "
+    "play music, stop music, volume, "
+    "good morning, good night, I'm home, I'm leaving"
+)
+
+
+def _detect_device() -> tuple[str, str]:
+    """Auto-detect the best device and compute type."""
+    device_setting = settings.voice.stt_device
+
+    if device_setting == "auto":
+        try:
+            import torch
+            if torch.cuda.is_available():
+                logger.info("CUDA GPU detected — using GPU for STT")
+                return "cuda", "float16"
+        except ImportError:
+            pass
+
+        logger.info("No GPU detected — using CPU for STT")
+        return "cpu", "int8"
+
+    elif device_setting == "cuda":
+        return "cuda", "float16"
+    else:
+        return "cpu", "int8"
+
 
 def _get_model() -> WhisperModel:
     """Lazy-load the Whisper model on first use."""
     global _model
     if _model is None:
         model_size = settings.voice.stt_model_size
-        logger.info("Loading Whisper model: %s (this may take a moment...)", model_size)
+        device, compute_type = _detect_device()
+
+        logger.info(
+            "Loading Whisper model: %s on %s (%s) — this may take a moment...",
+            model_size, device, compute_type,
+        )
 
         _model = WhisperModel(
             model_size,
-            device="cpu",          # Mac dev — GPU on desktop later
-            compute_type="int8",   # Fastest on CPU
+            device=device,
+            compute_type=compute_type,
         )
 
-        logger.info("Whisper model loaded: %s", model_size)
+        logger.info("Whisper model loaded: %s (%s)", model_size, device)
     return _model
 
 
@@ -66,12 +104,13 @@ def transcribe_audio(audio_bytes: bytes, sample_rate: int = 16000) -> str:
 
         tmp.flush()
 
-        # Transcribe
+        # Transcribe with vocabulary hints and VAD
         segments, info = model.transcribe(
             tmp.name,
-            beam_size=3,
+            beam_size=5,
             language="en",
-            vad_filter=True,           # Built-in Silero VAD
+            initial_prompt=VOCAB_HINTS,
+            vad_filter=True,
             vad_parameters=dict(
                 min_silence_duration_ms=500,
                 speech_pad_ms=200,
@@ -86,8 +125,9 @@ def transcribe_audio(audio_bytes: bytes, sample_rate: int = 16000) -> str:
         transcription = " ".join(text_parts).strip()
 
         logger.info(
-            "Transcription: '%s' (lang=%s, prob=%.2f, duration=%.1fs)",
+            "Transcription: '%s' (model=%s, lang=%s, prob=%.2f, duration=%.1fs)",
             transcription[:80],
+            settings.voice.stt_model_size,
             info.language,
             info.language_probability,
             info.duration,

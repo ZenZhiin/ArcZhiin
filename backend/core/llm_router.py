@@ -112,7 +112,7 @@ async def _call_gemini(
     if system_parts:
         config["system_instruction"] = "\n".join(system_parts)
 
-    response = client.models.generate_content(
+    response = await client.aio.models.generate_content(
         model=model,
         contents=contents,
         config=config,

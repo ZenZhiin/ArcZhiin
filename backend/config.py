@@ -39,7 +39,6 @@ class LLMConfig:
     """Configuration for LLM routing across multiple providers."""
 
     gemini_api_key: str = field(default_factory=lambda: _get_env("GEMINI_API_KEY"))
-    openai_api_key: str = field(default_factory=lambda: _get_env("OPENAI_API_KEY"))
     ollama_base_url: str = field(
         default_factory=lambda: _get_env("OLLAMA_BASE_URL", "http://localhost:11434")
     )

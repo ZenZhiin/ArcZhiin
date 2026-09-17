@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -79,7 +80,7 @@ async def websocket_voice(websocket: WebSocket) -> None:
                         "content": "transcribing",
                     })
 
-                    transcription = transcribe_audio(audio_bytes)
+                    transcription = await asyncio.to_thread(transcribe_audio, audio_bytes)
 
                     if not transcription:
                         await websocket.send_json({
@@ -130,7 +131,7 @@ async def websocket_voice(websocket: WebSocket) -> None:
                     })
 
                     import base64
-                    tts_bytes = synthesize_audio(response.content)
+                    tts_bytes = await asyncio.to_thread(synthesize_audio, response.content)
                     tts_b64 = base64.b64encode(tts_bytes).decode("ascii")
 
                     await websocket.send_json({

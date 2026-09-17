@@ -97,6 +97,14 @@ export const useVoice = () => {
   const startRecording = useCallback(async () => {
     if (status !== 'idle' || !isConnected) return;
 
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.error('navigator.mediaDevices is undefined (requires HTTPS or localhost)');
+      setLastResponse('Mic requires HTTPS or localhost');
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 4000);
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {

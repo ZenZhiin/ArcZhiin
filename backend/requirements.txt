@@ -3,29 +3,21 @@
 # =============================================================================
 
 # --- Core Framework ---
-fastapi==0.115.12
-uvicorn[standard]==0.34.3
-python-dotenv==1.1.0
-websockets==15.0.1
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-dotenv>=1.0.0
+websockets>=13.0.0
 
 # --- LLM Integration ---
-litellm==1.72.5
+google-genai>=0.1.0
+httpx>=0.27.0
 
 # --- Database ---
-aiosqlite==0.21.0
+aiosqlite>=0.20.0
 
-# --- Voice Pipeline (Phase 1) ---
-# openwakeword==0.6.0
-# faster-whisper==1.1.0
-# piper-tts==1.2.0
-# silero-vad==5.1
-
-# --- Embeddings & Vector Search (Phase 2) ---
-# fastembed==0.6.1
-# sqlite-vec==0.1.6
-
-# --- Home Assistant (Phase 3) ---
-# aiohttp==3.11.18
+# --- Voice Pipeline ---
+faster-whisper>=1.0.0
+piper-tts>=1.2.0
 
 # --- Utilities ---
-pydantic==2.11.3
+pydantic>=2.10.0

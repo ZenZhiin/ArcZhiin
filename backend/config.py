@@ -11,9 +11,18 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env file from project root
-_env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=_env_path)
+# Load .env file from possible locations (project root, /app in Docker, or cwd)
+_possible_paths = [
+    Path.cwd() / ".env",
+    Path(__file__).resolve().parent / ".env",
+    Path(__file__).resolve().parent.parent / ".env",
+]
+for _p in _possible_paths:
+    if _p.exists():
+        load_dotenv(dotenv_path=_p)
+        break
+else:
+    load_dotenv()
 
 
 def _get_env(key: str, default: str = "") -> str:

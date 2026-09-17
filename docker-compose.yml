@@ -5,6 +5,22 @@
 
 services:
   # ---------------------------------------------------------------------------
+  # ArcZhiin Frontend (React + Nginx)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: arczhiin-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - arczhiin-net
+
+  # ---------------------------------------------------------------------------
   # ArcZhiin Backend (FastAPI)
   # ---------------------------------------------------------------------------
   backend:
@@ -17,9 +33,11 @@ services:
       - "${PORT:-8000}:8000"
     volumes:
       - ./data:/app/data
-      - ./.env:/app/.env:ro
+      - .env:/app/.env:ro
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - HOME_ASSISTANT_URL=http://homeassistant:8123
+      - DATABASE_PATH=/app/data/arczhiin.db
     depends_on:
       - ollama
     networks:
@@ -41,7 +59,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
     networks:
       - arczhiin-net

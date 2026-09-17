@@ -12,6 +12,13 @@ export interface ChatMessageData {
   timestamp: Date;
 }
 
+const generateUUID = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+};
+
 export const useWebSocket = () => {
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -39,7 +46,7 @@ export const useWebSocket = () => {
         if (data.type === 'welcome') {
           setSessionId(data.session_id);
           setMessages(prev => [...prev, {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             type: 'welcome',
             content: data.content,
             timestamp: new Date()
@@ -49,7 +56,7 @@ export const useWebSocket = () => {
         } else if (data.type === 'response') {
           setIsThinking(false);
           setMessages(prev => [...prev, {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             type: 'assistant',
             content: data.content,
             model: data.model,
@@ -60,7 +67,7 @@ export const useWebSocket = () => {
         } else if (data.type === 'error') {
           setIsThinking(false);
           setMessages(prev => [...prev, {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             type: 'error',
             content: data.content,
             timestamp: new Date()
@@ -98,7 +105,7 @@ export const useWebSocket = () => {
   const sendMessage = useCallback((content: string) => {
     if (ws.current && isConnected) {
       setMessages(prev => [...prev, {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         type: 'user',
         content,
         timestamp: new Date()

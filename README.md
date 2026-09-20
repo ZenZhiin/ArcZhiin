@@ -5,7 +5,7 @@
 ## Architecture
 
 ```
-Desktop Hub (Ryzen 7 + GTX 1070 Ti + Linux)
+Desktop Hub 
 ├── FastAPI Backend (AI Brain + Voice Pipeline)
 ├── Ollama (CUDA GPU-accelerated LLMs)
 ├── Home Assistant (Docker)

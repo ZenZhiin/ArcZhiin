@@ -20,6 +20,8 @@ export const useVoice = () => {
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
   const reconnectAttempts = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const vadIntervalRef = useRef<number | null>(null);
 
   const connect = useCallback(() => {
     try {
@@ -118,6 +120,52 @@ export const useVoice = () => {
       audioChunks.current = [];
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
 
+      // Setup Web Audio API for Voice Activity Detection (silence detection)
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const audioCtx = new AudioContextClass();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.2;
+      const sourceNode = audioCtx.createMediaStreamSource(stream);
+      sourceNode.connect(analyser);
+      audioContextRef.current = audioCtx;
+
+      const freqData = new Uint8Array(analyser.frequencyBinCount);
+      let speechDetected = false;
+      let silenceStart: number | null = null;
+      const SPEECH_THRESHOLD = 20;       // Volume threshold to consider speaking
+      const SILENCE_DURATION_MS = 2000;  // Auto-stop after 2 seconds of silence
+      const MAX_WAIT_WITHOUT_SPEECH = 8000; // Auto-cancel if nothing spoken for 8s
+      const recordStartTime = Date.now();
+
+      const vadInterval = window.setInterval(() => {
+        analyser.getByteFrequencyData(freqData);
+        let sum = 0;
+        for (let i = 0; i < freqData.length; i++) {
+          sum += freqData[i];
+        }
+        const averageVolume = sum / freqData.length;
+
+        if (averageVolume > SPEECH_THRESHOLD) {
+          // User is actively speaking
+          speechDetected = true;
+          silenceStart = null;
+        } else if (speechDetected) {
+          // User has spoken, now silence
+          if (silenceStart === null) {
+            silenceStart = Date.now();
+          } else if (Date.now() - silenceStart >= SILENCE_DURATION_MS) {
+            // Detected 2 seconds of silence -> auto-stop!
+            stopRecording();
+          }
+        } else if (Date.now() - recordStartTime > MAX_WAIT_WITHOUT_SPEECH) {
+          // No speech detected for 8 seconds -> auto-cancel
+          stopRecording();
+        }
+      }, 100);
+
+      vadIntervalRef.current = vadInterval;
+
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunks.current.push(event.data);
@@ -125,7 +173,15 @@ export const useVoice = () => {
       };
 
       recorder.onstop = () => {
-        // Stop all tracks to release the mic
+        // Clean up VAD and audio tracks
+        if (vadIntervalRef.current) {
+          clearInterval(vadIntervalRef.current);
+          vadIntervalRef.current = null;
+        }
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(() => {});
+          audioContextRef.current = null;
+        }
         stream.getTracks().forEach(track => track.stop());
 
         if (audioChunks.current.length > 0) {
@@ -152,6 +208,14 @@ export const useVoice = () => {
   }, [status, isConnected]);
 
   const stopRecording = useCallback(() => {
+    if (vadIntervalRef.current) {
+      clearInterval(vadIntervalRef.current);
+      vadIntervalRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
     if (mediaRecorder.current?.state === 'recording') {
       mediaRecorder.current.stop();
     }

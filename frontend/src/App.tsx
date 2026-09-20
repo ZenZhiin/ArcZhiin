@@ -1,14 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useVoice } from './hooks/useVoice';
-import { StatusBar } from './components/StatusBar';
+import { StatusBar, type ViewMode } from './components/StatusBar';
 import { VoiceOrb } from './components/VoiceOrb';
+import { Avatar3D } from './components/Avatar3D';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 
 const App = () => {
   const { messages, isConnected: chatConnected, isThinking, sessionId, sendMessage, clearContext } = useWebSocket();
   const voice = useVoice();
+  const [viewMode, setViewMode] = useState<ViewMode>('avatar');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -21,23 +23,40 @@ const App = () => {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[var(--color-arc-bg)] text-[var(--color-arc-text)] font-sans overflow-hidden">
-      <StatusBar isConnected={chatConnected} sessionId={sessionId} messages={messages} />
+      <StatusBar
+        isConnected={chatConnected}
+        sessionId={sessionId}
+        messages={messages}
+        viewMode={viewMode}
+        onToggleViewMode={setViewMode}
+      />
       
       <div className="flex flex-col md:flex-row flex-1 mt-14 overflow-hidden">
-        {/* Left Panel: Voice Orb */}
-        <div className="hidden md:flex md:w-[40%] h-full relative z-10 bg-[var(--color-arc-bg)]">
-          <VoiceOrb
-            isConnected={voice.isConnected}
-            status={voice.status}
-            lastTranscription={voice.lastTranscription}
-            lastResponse={voice.lastResponse}
-            onTapStart={voice.startRecording}
-            onTapStop={voice.stopRecording}
-          />
+        {/* Left Panel: 3D Avatar OR Sci-Fi Voice Orb */}
+        <div className="hidden md:flex md:w-[45%] lg:w-[40%] h-full relative z-10 bg-[var(--color-arc-bg)]">
+          {viewMode === 'avatar' ? (
+            <Avatar3D
+              isConnected={voice.isConnected}
+              status={voice.status}
+              lastTranscription={voice.lastTranscription}
+              lastResponse={voice.lastResponse}
+              onTapStart={voice.startRecording}
+              onTapStop={voice.stopRecording}
+            />
+          ) : (
+            <VoiceOrb
+              isConnected={voice.isConnected}
+              status={voice.status}
+              lastTranscription={voice.lastTranscription}
+              lastResponse={voice.lastResponse}
+              onTapStart={voice.startRecording}
+              onTapStop={voice.stopRecording}
+            />
+          )}
         </div>
         
         {/* Right Panel: Chat Interface */}
-        <div className="flex flex-col w-full md:w-[60%] h-full relative z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
+        <div className="flex flex-col w-full md:w-[55%] lg:w-[60%] h-full relative z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
           <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
             {messages.map(msg => (
               <ChatMessage key={msg.id} message={msg} />

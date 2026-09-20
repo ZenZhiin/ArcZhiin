@@ -1,13 +1,23 @@
 import { useMemo } from 'react';
 import type { ChatMessageData } from '../hooks/useWebSocket';
 
+export type ViewMode = 'avatar' | 'orb';
+
 interface StatusBarProps {
   isConnected: boolean;
   sessionId: string | null;
   messages: ChatMessageData[];
+  viewMode: ViewMode;
+  onToggleViewMode: (mode: ViewMode) => void;
 }
 
-export const StatusBar = ({ isConnected, sessionId, messages }: StatusBarProps) => {
+export const StatusBar = ({
+  isConnected,
+  sessionId,
+  messages,
+  viewMode,
+  onToggleViewMode,
+}: StatusBarProps) => {
   const { totalInputTokens, totalOutputTokens, lastModel, lastTier } = useMemo(() => {
     let input = 0;
     let output = 0;
@@ -28,21 +38,47 @@ export const StatusBar = ({ isConnected, sessionId, messages }: StatusBarProps) 
 
   return (
     <div className="fixed top-0 left-0 right-0 h-14 bg-[var(--color-arc-surface)] border-b border-[var(--color-arc-border)] flex items-center justify-between px-6 z-50">
-      <div className="flex items-center gap-3">
-        <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-[var(--color-arc-success)] animate-pulse shadow-[0_0_8px_var(--color-arc-success)]' : 'bg-[var(--color-arc-error)]'}`} />
-        <span className="font-bold text-lg tracking-wider text-[var(--color-arc-cyan)] drop-shadow-[0_0_4px_rgba(0,212,255,0.3)]">ArcZhiin</span>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-[var(--color-arc-success)] animate-pulse shadow-[0_0_8px_var(--color-arc-success)]' : 'bg-[var(--color-arc-error)]'}`} />
+          <span className="font-bold text-lg tracking-wider text-[var(--color-arc-cyan)] drop-shadow-[0_0_4px_rgba(0,212,255,0.3)]">ArcZhiin</span>
+        </div>
+
+        {/* View Mode Toggle Switcher */}
+        <div className="hidden sm:flex items-center bg-black/40 border border-[var(--color-arc-border)] rounded-full p-0.5 text-xs font-mono">
+          <button
+            onClick={() => onToggleViewMode('avatar')}
+            className={`px-3 py-1 rounded-full transition-all duration-200 ${
+              viewMode === 'avatar'
+                ? 'bg-[var(--color-arc-cyan)] text-black font-semibold shadow-[0_0_10px_rgba(0,212,255,0.4)]'
+                : 'text-[var(--color-arc-muted)] hover:text-white'
+            }`}
+          >
+            3D Avatar
+          </button>
+          <button
+            onClick={() => onToggleViewMode('orb')}
+            className={`px-3 py-1 rounded-full transition-all duration-200 ${
+              viewMode === 'orb'
+                ? 'bg-[var(--color-arc-cyan)] text-black font-semibold shadow-[0_0_10px_rgba(0,212,255,0.4)]'
+                : 'text-[var(--color-arc-muted)] hover:text-white'
+            }`}
+          >
+            HUD Orb
+          </button>
+        </div>
       </div>
       
-      <div className="hidden sm:flex flex-col items-center">
-        <span className="text-xs text-[var(--color-arc-muted)] uppercase tracking-widest">Active Core</span>
+      <div className="hidden md:flex flex-col items-center">
+        <span className="text-[10px] text-[var(--color-arc-muted)] uppercase tracking-widest">Active Core</span>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-mono text-[var(--color-arc-sky)]">{lastModel}</span>
-          <span className="text-[10px] bg-[var(--color-arc-border)] px-1.5 py-0.5 rounded text-[var(--color-arc-text)]">{lastTier}</span>
+          <span className="text-xs font-mono text-[var(--color-arc-sky)]">{lastModel}</span>
+          <span className="text-[9px] bg-[var(--color-arc-border)] px-1.5 py-0.5 rounded text-[var(--color-arc-text)]">{lastTier}</span>
         </div>
       </div>
 
-      <div className="hidden md:flex items-center gap-6 text-xs font-mono text-[var(--color-arc-muted)]">
-        <div className="flex flex-col text-right">
+      <div className="flex items-center gap-6 text-xs font-mono text-[var(--color-arc-muted)]">
+        <div className="hidden lg:flex flex-col text-right">
           <span>Session</span>
           <span className="text-[var(--color-arc-text)]">{sessionId ? sessionId.slice(0,8) : 'DISCONNECTED'}</span>
         </div>
